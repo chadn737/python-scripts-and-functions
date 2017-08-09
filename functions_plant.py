@@ -271,11 +271,7 @@ def gene_metaplot(allc,features,genome_file,output=(),ignoreStrand=False,windows
     feature_metaplot('CDS_allc.tmp',features,genome_file,output,ignoreStrand,
                      windows,updown_stream,cutoff,first_feature,filter_chr)
     if remove_tmp:
-        for i in ['CDS_allc.tmp','c_tmp','f_tmp']:
-            os.remove(i)
-    else:
-        for i in ['c_tmp','f_tmp']:
-            os.remove(i)
+        os.remove('CDS_allc.tmp')
 
 #output per-site methylation levels for mCs in each specified context
 def per_site_mC(allc,output_path,context=['CG','CHG','CHH']):
