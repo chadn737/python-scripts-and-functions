@@ -54,10 +54,13 @@ def chr_filter(x,chr):
     return x.chrom not in chr
 
 #generic function for calculating methylation levels in windows
-def window_methylation_levels(m,cutoff=0,filter=0.5,nuc_bed=()):
-    a = pd.DataFrame(columns=['window','mCG','mCHG','mCHH'])
+def window_methylation_levels(m,cutoff=0,nuc_bed=()):
+    if nuc_bed:
+        a = pd.DataFrame(columns=['window','mCG','mCHG','mCHH','coverage'])
+    else:
+        a = pd.DataFrame(columns=['window','mCG','mCHG','mCHH'])
     name = "none"
-    CG = mCG = CHG = mCHG = CHH = mCHH = 0
+    C = CG = mCG = CHG = mCHG = CHH = mCHH = 0
     if nuc_bed:
         nuc = pd.read_table(nuc_bed.fn, usecols = [3,7,8])
         m = pd.merge(m,nuc,left_on=13,right_on='4_usercol')
@@ -67,6 +70,7 @@ def window_methylation_levels(m,cutoff=0,filter=0.5,nuc_bed=()):
         if nuc_bed:
             GC = int(c[7]) + int(c[8])
         if int(c[3]) >= int(cutoff):
+          C = C + 1
           if c[1].startswith("CN") or c[1].endswith("N"):
             continue
           elif c[1].startswith("CG"):
@@ -80,15 +84,15 @@ def window_methylation_levels(m,cutoff=0,filter=0.5,nuc_bed=()):
             mCHH = mCHH + int(c[2])
       elif c[5] != name:
         if nuc_bed:
-            if ((CG + CHG + CHH)/GC) >= filter:
-                a = a.append({'window':str(name), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG':(np.float64(mCHG)/np.float64(CHG)), 'mCHH':(np.float64(mCHH)/np.float64(CHH))}, ignore_index=True)
+            a = a.append({'window':str(name), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG':(np.float64(mCHG)/np.float64(CHG)), 'mCHH':(np.float64(mCHH)/np.float64(CHH)), 'coverage':(np.float64(C)/np.float(GC))}, ignore_index=True)
         else:
             a = a.append({'window':str(name), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG':(np.float64(mCHG)/np.float64(CHG)), 'mCHH':(np.float64(mCHH)/np.float64(CHH))}, ignore_index=True)
         name = c[5]
         if nuc_bed:
             GC = int(c[7]) + int(c[8])
-        CG = mCG = CHG = mCHG = CHH = mCHH = 0
+        C = CG = mCG = CHG = mCHG = CHH = mCHH = 0
         if int(c[3]) >= int(cutoff):
+            C = C + 1
             if c[1].startswith("CN") or c[1].endswith("N"):
               continue
             elif c[1].startswith("CG"):
@@ -101,6 +105,7 @@ def window_methylation_levels(m,cutoff=0,filter=0.5,nuc_bed=()):
               CHH = CHH + int(c[3])
               mCHH = mCHH + int(c[2])
       elif c[5] == name:
+        C = C + 1
         if int(c[3]) >= int(cutoff):
           if c[1].startswith("CN") or c[1].endswith("N"):
             continue
@@ -114,8 +119,7 @@ def window_methylation_levels(m,cutoff=0,filter=0.5,nuc_bed=()):
             CHH = CHH + int(c[3])
             mCHH = mCHH + int(c[2])
     if nuc_bed:
-        if ((CG + CHG + CHH)/GC) >= filter:
-            a = a.append({'window':str(name), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG':(np.float64(mCHG)/np.float64(CHG)), 'mCHH':(np.float64(mCHH)/np.float64(CHH))}, ignore_index=True)
+        a = a.append({'window':str(name), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG':(np.float64(mCHG)/np.float64(CHG)), 'mCHH':(np.float64(mCHH)/np.float64(CHH)), 'coverage':(np.float64(C)/np.float(GC))}, ignore_index=True)
     else:
         a = a.append({'window':str(name), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG':(np.float64(mCHG)/np.float64(CHG)), 'mCHH':(np.float64(mCHH)/np.float64(CHH))}, ignore_index=True)
     return a
@@ -132,21 +136,20 @@ def mC_distribution(genome_file,allc,gff_file,fasta,windows=100000,stepsize=5000
     allc_mapping = pbt.bedtool.BedTool.intersect(mC_bed,w_bed,wa=True,wb=True)
     m = pd.read_table(allc_mapping.fn,header=None,usecols=[10,13,6,7,8])
     m = m.sort_values(by = 13,ascending=True)
-    a = window_methylation_levels(m,cutoff,filter,nuc)
+    a = window_methylation_levels(m,cutoff,nuc)
     df = pd.merge(a,g,on='window')
+    df2 = df[df['coverage'] >= filter]
     correlations = pd.DataFrame(columns=['Context','r','p-value'])
-    corCG = pearsonr(df['mCG'],df['genes'])
+    corCG = pearsonr(df2['mCG'],df2['genes'])
     correlations = correlations.append({'Context': 'mCG', 'r': corCG[0], 'p-value': corCG[1]}, ignore_index=True)
-    corCHG = pearsonr(df['mCHG'],df['genes'])
+    corCHG = pearsonr(df2['mCHG'],df2['genes'])
     correlations = correlations.append({'Context': 'mCHG', 'r': corCHG[0], 'p-value': corCHG[1]}, ignore_index=True)
-    corCHH = pearsonr(df['mCHH'],df['genes'])
+    corCHH = pearsonr(df2['mCHH'],df2['genes'])
     correlations = correlations.append({'Context': 'mCHH', 'r': corCHH[0], 'p-value': corCHH[1]}, ignore_index=True)
     if output_path:
         correlations.to_csv(output_path + "correlations.tsv", sep='\t', index=False)
-    if save_windows:
-        df.to_csv(output_path + "genome_windows_data.tsv", sep='\t', index=False)
-    if return_windows:
-        return df
+        df.to_csv(output_path + "unfiltered_genome_windows_data.tsv", sep='\t', index=False)
+        df2.to_csv(output_path + "filtered_genome_windows_data.tsv", sep='\t', index=False)
     else:
         return correlations
 
