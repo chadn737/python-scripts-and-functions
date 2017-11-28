@@ -22,9 +22,10 @@ def expand_nucleotide_code(mc_type=["C"]):
     return mc_type
 
 #filter allc file based on sequence context
-def filter_context(allc,context=["C"]):
-    a = pd.read_table(allc,dtype={'chr':str,'pos':int,'strand':str,'mc_class':str,
-                      'mc_count':int,'total':int,'methylated':int})
+def filter_context(allc,context=["C"],header):
+    a = pd.read_table(allc,names=['chr','pos','strand','mc_class','mc_count',
+            'total','methylated'],dtype={'chr':str,'pos':int,'strand':str,
+            'mc_class':str,'mc_count':int,'total':int,'methylated':int})
     a = a[a.mc_class.isin(expand_nucleotide_code(context))]
     return a
 
@@ -53,12 +54,32 @@ def strand_filter(x,strand):
 def chr_filter(x,chr):
     return x.chrom not in chr
 
+#make an intron gff file
+def intron_gff(features,output=(),remove_db=True):
+    db=gffutils.create_db(features, 'gff.db')
+    gff_out=gffutils.gffwriter.GFFWriter(output, in_place=True)
+    for rec in db.create_introns():
+        gff_out.write_rec(rec)
+    gff_out.close()
+    if remove_db:
+        os.remove('gff.db')
+
 #generic function for calculating methylation levels in windows
-def window_methylation_levels(m,cutoff=0,nuc_bed=()):
+def window_methylation_levels(m,cutoff=0,nuc_bed=(),output_mC_counts=False):
     if nuc_bed:
-        a = pd.DataFrame(columns=['window','mCG','mCHG','mCHH','coverage'])
+        if output_mC_counts:
+            a = pd.DataFrame(columns=['window','mCG_reads','CG_reads','mCG',
+                                      'mCHG_reads','CHG_reads','mCHG','mCHH_reads',
+                                       'CHH_reads','mCHH','coverage'])
+        else:
+             a = pd.DataFrame(columns=['window','mCG','mCHG','mCHH','coverage'])
     else:
-        a = pd.DataFrame(columns=['window','mCG','mCHG','mCHH'])
+        if output_mC_counts:
+            a = pd.DataFrame(columns=['window','mCG_reads','CG_reads','mCG',
+                                      'mCHG_reads','CHG_reads','mCHG','mCHH_reads',
+                                       'CHH_reads','mCHH'])
+        else:
+             a = pd.DataFrame(columns=['window','mCG','mCHG','mCHH'])
     name = "none"
     C = CG = mCG = CHG = mCHG = CHH = mCHH = GC = 0
     if nuc_bed:
@@ -84,9 +105,15 @@ def window_methylation_levels(m,cutoff=0,nuc_bed=()):
             mCHH = mCHH + int(c[2])
       elif c[5] != name:
         if nuc_bed:
-            a = a.append({'window':str(name), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG':(np.float64(mCHG)/np.float64(CHG)), 'mCHH':(np.float64(mCHH)/np.float64(CHH)), 'coverage':(np.float64(C)/np.float(GC))}, ignore_index=True)
+            if output_mC_counts:
+                a = a.append({'window':str(name), 'mCG_reads':int(mCG), 'CG_reads':int(CG), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG_reads':int(mCHG), 'CHG_reads':int(CHG), 'mCHG':(np.float64(mCHG)/np.float64(CHG)),  'mCHH_reads':int(mCHH), 'CHH_reads':int(CHH), 'mCHH':(np.float64(mCHH)/np.float64(CHH)), 'coverage':(np.float64(C)/np.float(GC))}, ignore_index=True)
+            else:
+                a = a.append({'window':str(name), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG':(np.float64(mCHG)/np.float64(CHG)), 'mCHH':(np.float64(mCHH)/np.float64(CHH)), 'coverage':(np.float64(C)/np.float(GC))}, ignore_index=True)
         else:
-            a = a.append({'window':str(name), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG':(np.float64(mCHG)/np.float64(CHG)), 'mCHH':(np.float64(mCHH)/np.float64(CHH))}, ignore_index=True)
+            if output_mC_counts:
+                a = a.append({'window':str(name), 'mCG_reads':int(mCG), 'CG_reads':int(CG), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG_reads':int(mCHG), 'CHG_reads':int(CHG), 'mCHG':(np.float64(mCHG)/np.float64(CHG)),  'mCHH_reads':int(mCHH), 'CHH_reads':int(CHH), 'mCHH':(np.float64(mCHH)/np.float64(CHH)), 'coverage':(np.float64(C)/np.float(GC))}, ignore_index=True)
+            else:
+                a = a.append({'window':str(name), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG':(np.float64(mCHG)/np.float64(CHG)), 'mCHH':(np.float64(mCHH)/np.float64(CHH)), 'coverage':(np.float64(C)/np.float(GC))}, ignore_index=True)
         name = c[5]
         if nuc_bed:
             GC = int(c[7]) + int(c[8])
@@ -119,9 +146,15 @@ def window_methylation_levels(m,cutoff=0,nuc_bed=()):
             CHH = CHH + int(c[3])
             mCHH = mCHH + int(c[2])
     if nuc_bed:
-        a = a.append({'window':str(name), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG':(np.float64(mCHG)/np.float64(CHG)), 'mCHH':(np.float64(mCHH)/np.float64(CHH)), 'coverage':(np.float64(C)/np.float(GC))}, ignore_index=True)
+        if output_mC_counts:
+            a = a.append({'window':str(name), 'mCG_reads':int(mCG), 'CG_reads':int(CG), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG_reads':int(mCHG), 'CHG_reads':int(CHG), 'mCHG':(np.float64(mCHG)/np.float64(CHG)), 'mCHH_reads':int(mCHH), 'CHH_reads':int(CHH), 'mCHH':(np.float64(mCHH)/np.float64(CHH)), 'coverage':(np.float64(C)/np.float(GC))}, ignore_index=True)
+        else:
+            a = a.append({'window':str(name), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG':(np.float64(mCHG)/np.float64(CHG)), 'mCHH':(np.float64(mCHH)/np.float64(CHH)), 'coverage':(np.float64(C)/np.float(GC))}, ignore_index=True)
     else:
-        a = a.append({'window':str(name), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG':(np.float64(mCHG)/np.float64(CHG)), 'mCHH':(np.float64(mCHH)/np.float64(CHH))}, ignore_index=True)
+        if output_mC_counts:
+            a = a.append({'window':str(name), 'mCG_reads':int(mCG), 'CG_reads':int(CG), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG_reads':int(mCHG), 'CHG_reads':int(CHG), 'mCHG':(np.float64(mCHG)/np.float64(CHG)), 'mCHH_reads':int(mCHH), 'CHH_reads':int(CHH), 'mCHH':(np.float64(mCHH)/np.float64(CHH))}, ignore_index=True)
+        else:
+            a = a.append({'window':str(name), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG':(np.float64(mCHG)/np.float64(CHG)), 'mCHH':(np.float64(mCHH)/np.float64(CHH))}, ignore_index=True)
     return a
 
 #get correlations of mC with genes
