@@ -60,7 +60,7 @@ def window_methylation_levels(m,cutoff=0,nuc_bed=()):
     else:
         a = pd.DataFrame(columns=['window','mCG','mCHG','mCHH'])
     name = "none"
-    C = CG = mCG = CHG = mCHG = CHH = mCHH = 0
+    C = CG = mCG = CHG = mCHG = CHH = mCHH = GC = 0
     if nuc_bed:
         nuc = pd.read_table(nuc_bed.fn, usecols = [3,7,8])
         m = pd.merge(m,nuc,left_on=13,right_on='4_usercol')
