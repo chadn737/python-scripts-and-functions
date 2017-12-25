@@ -22,12 +22,16 @@ def expand_nucleotide_code(mc_type=["C"]):
     return mc_type
 
 #filter allc file based on sequence context
-def filter_context(allc,context=["C"],header):
-    a = pd.read_table(allc,names=['chr','pos','strand','mc_class','mc_count',
-            'total','methylated'],dtype={'chr':str,'pos':int,'strand':str,
-            'mc_class':str,'mc_count':int,'total':int,'methylated':int})
-    a = a[a.mc_class.isin(expand_nucleotide_code(context))]
-    return a
+def filter_context(allc,context=["C"]):
+	if open(allc).readline().rstrip() == 'chr\tpos\tstrand\tmc_class\tmc_count\ttotal\tmethylated':
+		a = pd.read_table(allc,dtype={'chr':str,'pos':int,'strand':str,'mc_class':str,
+			'mc_count':int,'total':int,'methylated':int})
+	else:
+		a = pd.read_table(allc,names=['chr','pos','strand','mc_class','mc_count',
+			'total','methylated'],dtype={'chr':str,'pos':int,'strand':str,
+			'mc_class':str,'mc_count':int,'total':int,'methylated':int})
+	a = a[a.mc_class.isin(expand_nucleotide_code(context))]
+	return a
 
 def allc2bed(allc,context=["C"],bed=True):
     a = filter_context(allc,context)
@@ -58,8 +62,18 @@ def chr_filter(x,chr):
 def intron_gff(features,output=(),remove_db=True):
     db=gffutils.create_db(features, 'gff.db')
     gff_out=gffutils.gffwriter.GFFWriter(output, in_place=True)
+    name="none"
+    count=1
     for rec in db.create_introns():
-        gff_out.write_rec(rec)
+    	if rec['Parent'] == name:
+        	count=count+1
+        	rec.attributes['ID'] = [str(rec['Parent'])[2:-2] + '.intron' + str(count)]
+       		gff_out.write_rec(rec)
+    	else:
+        	name = rec['Parent']
+        	count = 1
+        	rec.attributes['ID'] = [str(rec['Parent'])[2:-2] + '.intron' + str(count)]
+        	gff_out.write_rec(rec)
     gff_out.close()
     if remove_db:
         os.remove('gff.db')
@@ -111,9 +125,9 @@ def window_methylation_levels(m,cutoff=0,nuc_bed=(),output_mC_counts=False):
                 a = a.append({'window':str(name), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG':(np.float64(mCHG)/np.float64(CHG)), 'mCHH':(np.float64(mCHH)/np.float64(CHH)), 'coverage':(np.float64(C)/np.float(GC))}, ignore_index=True)
         else:
             if output_mC_counts:
-                a = a.append({'window':str(name), 'mCG_reads':int(mCG), 'CG_reads':int(CG), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG_reads':int(mCHG), 'CHG_reads':int(CHG), 'mCHG':(np.float64(mCHG)/np.float64(CHG)),  'mCHH_reads':int(mCHH), 'CHH_reads':int(CHH), 'mCHH':(np.float64(mCHH)/np.float64(CHH)), 'coverage':(np.float64(C)/np.float(GC))}, ignore_index=True)
+                a = a.append({'window':str(name), 'mCG_reads':int(mCG), 'CG_reads':int(CG), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG_reads':int(mCHG), 'CHG_reads':int(CHG), 'mCHG':(np.float64(mCHG)/np.float64(CHG)),  'mCHH_reads':int(mCHH), 'CHH_reads':int(CHH), 'mCHH':(np.float64(mCHH)/np.float64(CHH))}, ignore_index=True)
             else:
-                a = a.append({'window':str(name), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG':(np.float64(mCHG)/np.float64(CHG)), 'mCHH':(np.float64(mCHH)/np.float64(CHH)), 'coverage':(np.float64(C)/np.float(GC))}, ignore_index=True)
+                a = a.append({'window':str(name), 'mCG':(np.float64(mCG)/np.float64(CG)), 'mCHG':(np.float64(mCHG)/np.float64(CHG)), 'mCHH':(np.float64(mCHH)/np.float64(CHH))}, ignore_index=True)
         name = c[5]
         if nuc_bed:
             GC = int(c[7]) + int(c[8])
@@ -538,3 +552,18 @@ def filter_dmr(dmr_file,output=(),min_dms=5,min_mC_diff=0.1):
         a.to_csv(output, sep='\t', index=False)
     else:
         return a
+
+#
+def genome_window_methylation(allc,genome_file,output=(),window_size=100,cutoff=0,filter_chr=[],output_mC_counts=True):
+	w_bed = pbt.bedtool.BedTool.window_maker(pbt.BedTool(genome_file),g=genome_file,w=window_size,i='srcwinnum')
+	mC_bed = allc2bed(allc)
+	allc_mapping = pbt.bedtool.BedTool.intersect(mC_bed,w_bed,wa=True,wb=True)
+	m = pd.read_table(allc_mapping.fn,header=None,usecols=[10,13,6,7,8])
+	#m = m.sort_values(by = 13,ascending=True)
+	b = window_methylation_levels(m,cutoff=cutoff,nuc_bed=(),output_mC_counts=True)
+	if output:
+		b.to_csv(output, sep='\t', index=False)
+	else:
+		return b
+	for i in ['w_bed','mC_bed','allc_mapping','m','b']:
+		del(i)
